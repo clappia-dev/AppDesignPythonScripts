@@ -38,6 +38,8 @@ def create_field(section_index, field_index, label, field_type, options, formula
     }
     if (field_type == 'calculationsAndLogic'):
         payload["formula"] = formula
+    if (field_type == 'dropdown' or field_type == 'singleSelector' or field_type == 'multiSelector'): 
+        payload["options"] = options.split(',')
     # print(payload)
     # Mock POST request
     headers = {'Content-Type': 'application/json', 'x-api-key': api_key}
@@ -49,6 +51,7 @@ def create_field(section_index, field_index, label, field_type, options, formula
         print('Field created:', field_name)
         return field_name
     else:
+        print (response)
         return None
     
 def main():

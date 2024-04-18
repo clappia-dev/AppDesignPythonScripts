@@ -3,3 +3,5 @@ sectionIndex,fieldIndex,label,fieldType,options,formula
 1,2,Price,singleLineText,,
 1,3,Quantity,singleLineText,,
 1,4,Other,singleLineText,,
+2,1,Gender,singleSelector,"Male,Female",
+2,2,Hobbies,multiSelector,"Reading,Writing,Playing",
