@@ -7,6 +7,8 @@ import networkx as nx
 import re
 import requests
 import argparse
+import time
+import traceback
 
 # Function to parse formula and extract labels
 def extract_labels(formula):
@@ -23,10 +25,10 @@ def extract_labels(formula):
     return dependencies
 
 # Function to create fields using API
-def create_field(section_index, field_index, label, field_type, options, formula):
+# TODO: Reduce number of args by accepting a field details dictionary
+def create_field(section_index, field_index, label, field_type, options, formula, required='', display_condition='', allowed_file_types=''):
     print('Creating field:', label, field_type)
     api_endpoint = "https://api-public-v3.clappia.com/appdefinitionv2/addField"
-    # Mock JSON payload
     payload = {
         "appId": app_id,
         "workplaceId": workplace_id,
@@ -36,15 +38,28 @@ def create_field(section_index, field_index, label, field_type, options, formula
         "fieldType": field_type,
         "label": label,
     }
-    if (field_type == 'calculationsAndLogic'):
+    if formula:
         payload["formula"] = formula
-    if (field_type == 'dropdown' or field_type == 'singleSelector' or field_type == 'multiSelector'): 
-        payload["options"] = options.split(',')
+    if options:
+        options = options.split(',')
+        options = [option.strip() for option in options]
+        payload["options"] = options
+    if display_condition:
+        payload["displayCondition"] = display_condition
+    if allowed_file_types:
+        payload["allowedFileTypes"] = allowed_file_types.split(',')
+    if required:
+        payload["required"] = True
+
     # print(payload)
-    # Mock POST request
     headers = {'Content-Type': 'application/json', 'x-api-key': api_key}
-    
-    response = requests.post(api_endpoint, json=payload, headers=headers)
+    try:
+        response = requests.post(api_endpoint, json=payload, headers=headers)
+    except:
+        print(traceback.format_exc())
+        print('Timeout occurred, retrying after 10 seconds...', )
+        time.sleep(10)
+        response = requests.post(api_endpoint, json=payload, headers=headers)
     # print(response)
     if response.status_code == 200:
         field_name = response.json()['fieldName']
@@ -54,36 +69,76 @@ def create_field(section_index, field_index, label, field_type, options, formula
         print (response)
         return None
     
+def update_field(field_name, label, options, formula, required='', display_condition='', allowed_file_types=''):
+    print('Updating field:', label)
+    api_endpoint = "https://api-public-v3.clappia.com/appdefinitionv2/updateField"
+    payload = {
+        "appId": app_id,
+        "workplaceId": workplace_id,
+        "requestingUserEmailAddress": requesting_user_email_address,
+        "fieldName": field_name,
+        "label": label,
+    }
+    if formula:
+        payload["formula"] = formula
+    if options:
+        options = options.split(',')
+        options = [option.strip() for option in options]
+        payload["options"] = options
+    if display_condition:
+        payload["displayCondition"] = display_condition
+    if allowed_file_types:
+        payload["allowedFileTypes"] = allowed_file_types.split(',')
+    if required:
+        payload["required"] = True
+
+    # print(payload)
+    headers = {'Content-Type': 'application/json', 'x-api-key': api_key}
+    try:
+        response = requests.post(api_endpoint, json=payload, headers=headers)
+    except:
+        print(traceback.format_exc())
+        print('Timeout occurred, retrying after 10 seconds...', )
+        time.sleep(10)
+        response = requests.post(api_endpoint, json=payload, headers=headers)
+    if response.status_code == 200:
+        print('Field updated')   
+    else:
+        print (response)
+        return None
 def main():
     # Read CSV file
-    df = pd.read_csv(file_path)
-
-    # Create dependency graph
-    G = nx.DiGraph()
-
-    # Add edges to the graph based on formulas
+    df = pd.read_csv(file_path, na_filter=False)
     for index, row in df.iterrows():
-        label = row['label']
+        section_index = row['sectionIndex']
+        field_index = row['fieldIndex']
+        field_type = row['fieldType']
+        options = row['options']
         formula = row['formula']
-        dependencies = extract_labels(str(formula))
-        if not dependencies:
-            G.add_node(index)
-        else:
-            for dependency in dependencies:
-                G.add_edge(dependency, index)
-
-    # Iterate through the graph in topological order
-    for node in nx.topological_sort(G):
-        section_index = df.loc[node, 'sectionIndex']
-        field_index = df.loc[node, 'fieldIndex']
-        field_type = df.loc[node, 'fieldType']
-        options = df.loc[node, 'options']
-        formula = df.loc[node, 'formula']
-        label = df.loc[node, 'label']
-        field_name = create_field(section_index-1, field_index-1, label, field_type, options, formula)
+        label = row['label']
+        required = row['required']
+        display_condition = row['display_condition']
+        allowed_file_types = row['allowed_file_types']
+        field_name = create_field(section_index-1, field_index-1, label, field_type, options, formula, required, display_condition, allowed_file_types)
+    
+        df.at[index, 'field_name'] = field_name
         if field_name:
             # Replace references to fields in formulas
-            df['formula'] = df['formula'].apply(lambda x: str(x).replace('{' + str(node+2) + '}', '{' + field_name + '}'))
+            df['formula'] = df['formula'].apply(lambda x: str(x).replace('{' + str(index+2) + '}', '{' + field_name + '}'))
+            df['display_condition'] = df['display_condition'].apply(lambda x: str(x).replace('{' + str(index+2) + '}', '{' + field_name + '}') if x and type(x) == str else '')
+    
+    # iterate through the df and call updateField API for all
+    for index, row in df.iterrows():
+        field_name = row['field_name']
+        field_type = row['fieldType']
+        options = row['options']
+        formula = row['formula']
+        label = row['label']
+        required = row['required']
+        display_condition = row['display_condition']
+        allowed_file_types = row['allowed_file_types']
+        update_field(field_name, label, options, formula, required, display_condition, allowed_file_types)
+    
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
